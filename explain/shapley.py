@@ -6,20 +6,19 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import warnings
 
+import warnings
 warnings.filterwarnings("ignore")
 
 from tqdm import tqdm
-from typing import Dict, Tuple
-from utils.utils import NeighborSampler
+from typing import Dict
 
 
 class ShapleyExplainer:
     def __init__(self, model: nn.Module, device: str = "cpu", num_samples: int = 100):
-        self.model = model
-        self.device = device
-        self.num_samples = num_samples
+        self.model: nn.Module = model
+        self.device: str = device
+        self.num_samples: int = num_samples
         self.model.eval()
 
     def compute_shapley_values(
@@ -27,7 +26,6 @@ class ShapleyExplainer:
         src_node_ids: np.ndarray,
         dst_node_ids: np.ndarray,
         node_interact_times: np.ndarray,
-        neighbor_sampler: NeighborSampler,
         temporal_importance: bool = True,
     ) -> Dict:
         """
@@ -37,64 +35,29 @@ class ShapleyExplainer:
             src_node_ids: np.ndarray
             dst_node_ids: np.ndarray
             node_interact_times: np.ndarray
-            neighbor_sampler: NeighborSampler
             temporal_importance: bool
 
         Returns:
             results: Dict
         """
         results = {}
-        baseline_pred = self._get_baseline_prediction(src_node_ids)
 
         with torch.no_grad():
 
             if temporal_importance:
                 print("Computing temporal Shapley values...")
                 temporal_shapley = self._compute_temporal_shapley(
-                    src_node_ids, dst_node_ids, node_interact_times, baseline_pred
+                    src_node_ids, dst_node_ids, node_interact_times
                 )
                 results["temporal_shapley"] = temporal_shapley
 
         return results
-
-    def _get_baseline_prediction(self, src_node_ids: np.ndarray) -> torch.Tensor:
-        """
-        Get baseline prediction.
-
-        Args:
-            src_node_ids: np.ndarray
-
-        Returns:
-            baseline_pred: Tensor
-        """
-        zero_src_emb, zero_dst_emb = self._get_zero_embeddings(src_node_ids)
-        baseline_pred = self.model[1](zero_src_emb, zero_dst_emb)
-        return baseline_pred
-
-    def _get_zero_embeddings(
-        self, src_node_ids: np.ndarray
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Get zero embeddings.
-
-        Args:
-            src_node_ids: np.ndarray
-
-        Returns:
-            zero_emb: Tensor
-        """
-        batch_size = len(src_node_ids)
-        zero_emb = torch.zeros(
-            batch_size, self.model[0].node_feat_dim, device=self.device
-        )
-        return zero_emb, zero_emb
 
     def _compute_temporal_shapley(
         self,
         src_node_ids: np.ndarray,
         dst_node_ids: np.ndarray,
         node_interact_times: np.ndarray,
-        baseline_pred: torch.Tensor,
     ) -> np.ndarray:
         """
         Compute temporal Shapley values.
@@ -103,7 +66,6 @@ class ShapleyExplainer:
             src_node_ids: np.ndarray
             dst_node_ids: np.ndarray
             node_interact_times: np.ndarray
-            baseline_pred: torch.Tensor
 
         Returns:
             temporal_shapley: np.ndarray
@@ -116,20 +78,17 @@ class ShapleyExplainer:
         ):
             current_time = node_interact_times[i]
 
-            time_variations = np.linspace(current_time * 0.5, current_time * 1.5, 10)
-
-            shapley_sum = 0.0
-            for time_var in time_variations:
-                pred_time = self._get_prediction_at_time(
-                    src_node_ids[i], dst_node_ids[i], time_var
-                )
-                pred_current = self._get_prediction_at_time(
-                    src_node_ids[i], dst_node_ids[i], current_time
-                )
-
-                shapley_sum += (pred_current - baseline_pred).item()
-
-            temporal_shapley[i] = shapley_sum / len(time_variations)
+            # prediction with temporal information
+            pred_with_time = self._get_prediction_at_time(
+                src_node_ids[i], dst_node_ids[i], current_time
+            )
+            
+            # prediction without temporal information
+            pred_without_time = self._get_prediction_at_time(
+                src_node_ids[i], dst_node_ids[i], min(node_interact_times)
+            )
+            
+            temporal_shapley[i] = (pred_with_time - pred_without_time).item()
 
         return temporal_shapley
 
@@ -147,6 +106,7 @@ class ShapleyExplainer:
         Returns:
             pred: Tensor
         """
+        # get temporal embeddings at the specific time point
         src_emb, dst_emb = self.model[0].compute_src_dst_node_temporal_embeddings(
             np.array([src_id]), np.array([dst_id]), np.array([time])
         )
