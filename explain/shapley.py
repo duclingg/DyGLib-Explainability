@@ -6,23 +6,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import logging
 import warnings
 warnings.filterwarnings('ignore')
-
-from typing import List, Tuple, Dict, Any
-from itertools import combinations
-from tqdm import tqdm
-
-from utils.DataLoader import get_link_prediction_data, Data
-from utils.utils import get_neighbor_sampler, convert_to_gpu
-from utils.load_configs import get_link_prediction_args
-from utils.EarlyStopping import EarlyStopping
-from models.DyGFormer import DyGFormer
-from models.modules import MergeLayer
 
 class ShapleyExplainer:
     def __init__(self, model: nn.Module, device: str = "cpu", num_samples: int = 100):
@@ -39,52 +24,102 @@ class ShapleyExplainer:
         neighbor_sampler, 
         temporal_importance: bool = True
     ):
-        pass
+        """
+        Compute Shapley values.
+
+        Args:
+            src_node_ids: np.ndarray
+            dst_node_ids: np.ndarray
+            node_interact_times: np.ndarray
+            neighbor_sampler: NeighborSampler
+            temporal_importance: bool
+
+        Returns:
+            results: Dict
+        """
+        results = {}
+        
+        with torch.no_grad():
+            baseline_pred = self._get_baseline_prediction(src_node_ids)
+            
+            if temporal_importance:
+                print("Computing temporal Shapley values...")
+                temporal_shapley = self._compute_temporal_shapley(
+                    src_node_ids, dst_node_ids, node_interact_times
+                )
+                results["temporal_shapley"] = temporal_shapley
+                
+        return results
     
-    def _get_baseline_prediction(
-        self,
-        src_node_ids: np.ndarray,
-        dst_node_ids: np.ndarray,
-        node_interact_times: np.ndarray,
-        neighbor_sampler
-    ):
-        pass
+    def _get_baseline_prediction(self, src_node_ids: np.ndarray):
+        """
+        Get baseline prediction.
+
+        Args:
+            src_node_ids: np.ndarray
+
+        Returns:
+            baseline_pred: Tensor
+        """
+        zero_src_emb, zero_dst_emb = self._get_zero_embeddings(src_node_ids)
+        baseline_pred = self.model[1](zero_src_emb, zero_dst_emb)
+        return baseline_pred
     
-    def _get_zero_embeddings(
-        self,
-        src_node_ids: np.ndarray,
-        dst_node_ids: np.ndarray,
-        node_interact_times: np.ndarray,
-        neighbor_sampler
-    ):
-        pass
+    def _get_zero_embeddings(self, src_node_ids: np.ndarray):
+        """
+        Get zero embeddings.
+
+        Args:
+            src_node_ids: np.ndarray
+
+        Returns:
+            zero_emb: Tensor
+        """
+        batch_size = len(src_node_ids)
+        zero_emb = torch.zeros(batch_size, self.model[0].node_feat_dim, device=self.device)
+        return zero_emb, zero_emb
     
     def _compute_temporal_shapley(
         self,
         src_node_ids: np.ndarray,
         dst_node_ids: np.ndarray,
-        node_interact_times: np.ndarray,
-        neighbor_sampler,
-        baseline_pred
+        node_interact_times: np.ndarray
     ):
         """
         Compute temporal Shapley values.
 
         Args:
-            src_node_ids (np.ndarray): _description_
-            dst_node_ids (np.ndarray): _description_
-            node_interact_times (np.ndarray): _description_
-            neighbor_sampler (_type_): _description_
-            baseline_pred (_type_): _description_
+            src_node_ids: np.ndarray
+            dst_node_ids: np.ndarray
+            node_interact_times: np.ndarray
+
+        Returns:
+            temporal_shapley: np.ndarray
         """
+        batch_size = len(src_node_ids)
+        temporal_shapley = np.zeros(batch_size)
         
+        for i in tqdm(range(batch_size), desc="Computing temporal Shapley values"):
+            current_time = node_interact_times[i]
+            
+            time_variations = np.linspace(current_time * 0.5, current_time * 1.5, 10)
+            
+            shapley_sum = 0.0
+            for time_var in time_variations:
+                pred_time = self._get_prediction_at_time(
+                    src_node_ids[i], dst_node_ids[i], time_var
+                )
+                pred_current = self._get_prediction_at_time(
+                    src_node_ids[i], dst_node_ids[i], current_time
+                )
+                
+                shapley_sum += (pred_current - pred_time).item()
+                
+            temporal_shapley[i] = shapley_sum / len(time_variations)
+            
+        return temporal_shapley
     
-    def _get_prediction_at_time(
-        self, 
-        src_id: int, 
-        dst_id: int, 
-        time: float
-    ):
+    def _get_prediction_at_time(self, src_id: int, dst_id: int, time: float):
         """
         Get prediction at specific time point.
 
