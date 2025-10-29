@@ -8,6 +8,7 @@ import torch.nn as nn
 import numpy as np
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from tqdm import tqdm
@@ -15,6 +16,15 @@ from typing import Dict
 
 
 class ShapleyExplainer:
+    """
+    Shapley explainer for the DyGFormer temporal graph neural network prediction model.
+
+    Args:
+        model: nn.Module
+        device: str
+        num_samples: int
+    """
+
     def __init__(self, model: nn.Module, device: str = "cpu", num_samples: int = 100):
         self.model: nn.Module = model
         self.device: str = device
@@ -82,12 +92,12 @@ class ShapleyExplainer:
             pred_with_time = self._get_prediction_at_time(
                 src_node_ids[i], dst_node_ids[i], current_time
             )
-            
+
             # prediction without temporal information
             pred_without_time = self._get_prediction_at_time(
                 src_node_ids[i], dst_node_ids[i], min(node_interact_times)
             )
-            
+
             temporal_shapley[i] = (pred_with_time - pred_without_time).item()
 
         return temporal_shapley
@@ -96,7 +106,7 @@ class ShapleyExplainer:
         self, src_id: int, dst_id: int, time: float
     ) -> torch.Tensor:
         """
-        Get prediction at specific time point.
+        Get graph prediction at specific time point.
 
         Args:
             src_id: int
