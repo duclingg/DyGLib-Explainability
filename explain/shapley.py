@@ -17,6 +17,20 @@ from typing import Dict
 class ShapleyExplainer:
     """
     Shapley explainer for the DyGFormer temporal graph neural network prediction model.
+    1. Defines a set of features (players)
+    2. Computes marginal contributions acorss all possible coalitions
+    3. Averages the contributions weighted by coalition size
+    
+    The Game:
+    - The prediction (link prediction or node classification) of the model is the payoff to the player. 
+    - The players' interactions are the actions taken by the player.
+
+    Players:
+    - Node Features
+    - Edge Features
+    - Neighborhood Structure
+    - Temporal Information
+    - History Length
 
     Args:
         model: nn.Module
@@ -25,14 +39,13 @@ class ShapleyExplainer:
     """
 
     def __init__(self, model: nn.Module, device: str = "cpu", num_samples: int = 100):
+        warnings.filterwarnings("ignore")
+        logging.basicConfig(level=logging.DEBUG)
+        
+        self.logger = logging.getLogger()
         self.model: nn.Module = model
         self.device: str = device
         self.num_samples: int = num_samples
-
-        warnings.filterwarnings("ignore")
-        logging.basicConfig(level=logging.DEBUG)
-        logger = logging.getLogger()
-
         self.model.eval()
 
     def get_summary_statistics(self, results: Dict) -> pd.DataFrame:
@@ -88,19 +101,32 @@ class ShapleyExplainer:
 
     def compute_shapley_values(
         self,
+        node_raw_features: np.ndarray,
+        edge_raw_features: np.ndarray,
         src_node_ids: np.ndarray,
         dst_node_ids: np.ndarray,
         node_interact_times: np.ndarray,
+        labels: np.ndarray,
+        edge_ids: np.ndarray,
         temporal_importance: bool = True,
+        node_importance: bool = False,
+        edge_importance: bool = False,
         return_df: bool = True,
     ) -> Dict:
         """
-        Compute Shapley values.
+        Compute all feature Shapley values.
 
         Args:
+            node_raw_features: np.ndarray
+            edge_raw_features: np.ndarray
             src_node_ids: np.ndarray
             dst_node_ids: np.ndarray
             node_interact_times: np.ndarray
+            labels: np.ndarray
+            temporal_importance: bool
+            node_importance: bool
+            edge_importance: bool
+            return_df: bool
             temporal_importance: bool
 
         Returns:
@@ -111,7 +137,7 @@ class ShapleyExplainer:
         with torch.no_grad():
 
             if temporal_importance:
-                print("Computing temporal Shapley values...")
+                self.logger.info("Computing temporal Shapley values...")
                 temporal_shapley = self._compute_temporal_shapley(
                     src_node_ids, dst_node_ids, node_interact_times
                 )
@@ -134,7 +160,10 @@ class ShapleyExplainer:
         node_interact_times: np.ndarray,
     ) -> np.ndarray:
         """
-        Compute temporal Shapley values.
+        Compute temporal Shapley values. 
+        
+        The temporal Shapley value is the difference between the prediction with 
+        temporal information and the prediction without temporal information.
 
         Args:
             src_node_ids: np.ndarray
@@ -147,7 +176,7 @@ class ShapleyExplainer:
         batch_size = len(src_node_ids)
         temporal_shapley = np.zeros(batch_size)
 
-        baseline_time = np.median(node_interact_times)
+        baseline_time = np.min(node_interact_times)
 
         for i in tqdm(
             range(batch_size), desc="Computing temporal features SHAP values"

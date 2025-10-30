@@ -18,7 +18,8 @@ This model was trained on the following parameters:
 - `negative_sample_strategy random`
 - `num_runs 5`
 - `gpu 0`  
+You must define the explanation type, as well as the prediction task.
 
-```bash
-python explain_model.py --dataset_name wikipedia --model_name DyGFormer --patch_size 2 --max_input_sequence 64 --negative_sample_strategy random --num_runs 5 --gpu 0
+```zsh
+python explain_model.py --dataset_name wikipedia --model_name DyGFormer --patch_size 2 --max_input_sequence 64 --negative_sample_strategy random --num_runs 5 --gpu 0 --explanation_type shapley --prediction_type link
 ```

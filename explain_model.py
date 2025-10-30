@@ -20,7 +20,9 @@ if __name__ == "__main__":
 
     if args.prediction_type == "link":
         # load the link prediction model
-        model, full_data = load_link_prediction_model()
+        model, node_raw_features, edge_raw_features, full_data = (
+            load_link_prediction_model()
+        )
 
         # get the data for the explainers
         (
@@ -42,9 +44,13 @@ if __name__ == "__main__":
             shapley_explainer = ShapleyExplainer(model)
 
             shapley_values = shapley_explainer.compute_shapley_values(
+                node_raw_features=node_raw_features,
+                edge_raw_features=edge_raw_features,
                 src_node_ids=src_node_ids,
                 dst_node_ids=dst_node_ids,
                 node_interact_times=node_interact_times,
+                labels=labels,
+                edge_ids=edge_ids,
             )
 
             logger.info(f"Shapley values: {shapley_values}")

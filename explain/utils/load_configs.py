@@ -277,7 +277,7 @@ def load_data_attributes(
     )
 
 
-def load_link_prediction_model() -> Tuple[nn.Module, Data]:
+def load_link_prediction_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Data]:
     """
     load the link prediction model
 
@@ -512,7 +512,7 @@ def load_link_prediction_model() -> Tuple[nn.Module, Data]:
 
             model = convert_to_gpu(model, device=args.device)
 
-    return model, full_data
+    return model, node_raw_features, edge_raw_features, full_data
 
 
 def load_node_prediction_model() -> nn.Module:
