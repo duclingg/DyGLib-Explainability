@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 import argparse
 from pandas.testing import assert_frame_equal
-from distutils.dir_util import copy_tree
+from shutil import copytree
 
 
 def preprocess(dataset_name: str):
@@ -200,7 +200,7 @@ if args.dataset_name in ["enron", "SocialEvo", "uci"]:
     Path("../processed_data/{}/".format(args.dataset_name)).mkdir(
         parents=True, exist_ok=True
     )
-    copy_tree(
+    copytree(
         "../DG_data/{}/".format(args.dataset_name),
         "../processed_data/{}/".format(args.dataset_name),
     )
