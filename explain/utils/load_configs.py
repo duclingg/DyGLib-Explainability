@@ -69,6 +69,27 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
         choices=["link", "node"],
         help="type of prediction task",
     )
+    
+    parser.add_argument(
+        "--num_samples",
+        type=int,
+        default=25,
+        help="number of samples for explanation background data, higher is more accurate but slower"
+    )
+    
+    parser.add_argument(
+        "--sample_ratio",
+        type=float,
+        default=0.01,
+        help="ratio of test data to explain, smaller is faster but less accurate"
+    )
+    
+    parser.add_argument(
+        "--nsamples",
+        type=int,
+        default=25,
+        help="number of times to re-evaluate model per explanation, higher is more accurate but slower"
+    )
 
     parser.add_argument(
         "--dataset_name",
