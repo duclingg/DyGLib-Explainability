@@ -24,7 +24,7 @@ logger = logging.getLogger()
 class ShapleyExplainer:
     """
     SHAP Explainer for Temporal Graph Neural Networks.
-    Uses KernelSHAP to explain link predictions in temporal graphs.
+    Uses KernelSHAP to explain link predictions and node classifications in temporal graphs.
     """
 
     def __init__(
@@ -32,6 +32,7 @@ class ShapleyExplainer:
         model: nn.Module,
         node_raw_features: np.ndarray,
         edge_raw_features: np.ndarray,
+        prediction_type: str = "link",
         num_samples: int = 100,
         sample_ratio: float = 0.1,
         nsamples: int = 100,
@@ -41,9 +42,10 @@ class ShapleyExplainer:
         Initialize the Shapley Explainer.
 
         Args:
-            model: The trained temporal GNN model (Sequential with backbone + predictor)
+            model: The trained temporal GNN model (Sequential with backbone + predictor/classifier)
             node_raw_features: Raw node features
             edge_raw_features: Raw edge features
+            prediction_type: Type of prediction task - "link" for link prediction, "node" for node classification
             num_samples: Number of samples for background data in KernelSHAP (default: 100)
                         Lower = faster but less accurate baseline
             sample_ratio: Ratio of test data to explain (default: 0.1 = 10%)
@@ -56,10 +58,14 @@ class ShapleyExplainer:
         self.model = model
         self.node_raw_features = node_raw_features
         self.edge_raw_features = edge_raw_features
+        self.prediction_type = prediction_type
         self.num_samples = num_samples
         self.sample_ratio = sample_ratio
         self.nsamples = nsamples
         self.device = device
+
+        if prediction_type not in ["link", "node"]:
+            raise ValueError(f"prediction_type must be 'link' or 'node', got {prediction_type}")
 
         self.model.eval()
 
@@ -69,6 +75,7 @@ class ShapleyExplainer:
         self.sampled_indices = None
 
         logger.info(f"Initialized ShapleyExplainer:")
+        logger.info(f"  - prediction_type: {prediction_type}")
         logger.info(f"  - num_samples (background): {num_samples}")
         logger.info(f"  - sample_ratio (explain): {sample_ratio}")
         logger.info(f"  - nsamples (model evals): {nsamples}")
@@ -90,7 +97,7 @@ class ShapleyExplainer:
         
         Args:
             src_node_ids: Source node IDs
-            dst_node_ids: Destination node IDs
+            dst_node_ids: Destination node IDs (not used for node classification)
             node_interact_times: Interaction timestamps
             edge_ids: Edge IDs (optional)
 
@@ -133,33 +140,34 @@ class ShapleyExplainer:
             ["src_node_mean", "src_node_std", "src_node_max", "src_node_min"]
         )
 
-        # Destination node features - same aggregation
-        dst_features = self.node_raw_features[dst_node_ids]
-        if len(dst_features.shape) == 1:
-            dst_features = dst_features.reshape(-1, 1)
+        # Destination node features - only for link prediction
+        if self.prediction_type == "link":
+            dst_features = self.node_raw_features[dst_node_ids]
+            if len(dst_features.shape) == 1:
+                dst_features = dst_features.reshape(-1, 1)
 
-        dst_mean = dst_features.mean(axis=1, keepdims=True)
-        dst_std = dst_features.std(axis=1, keepdims=True)
-        dst_max = dst_features.max(axis=1, keepdims=True)
-        dst_min = dst_features.min(axis=1, keepdims=True)
+            dst_mean = dst_features.mean(axis=1, keepdims=True)
+            dst_std = dst_features.std(axis=1, keepdims=True)
+            dst_max = dst_features.max(axis=1, keepdims=True)
+            dst_min = dst_features.min(axis=1, keepdims=True)
 
-        dst_mean_norm = (dst_mean - dst_mean.min()) / (
-            dst_mean.max() - dst_mean.min() + 1e-10
-        )
-        dst_std_norm = (dst_std - dst_std.min()) / (
-            dst_std.max() - dst_std.min() + 1e-10
-        )
-        dst_max_norm = (dst_max - dst_max.min()) / (
-            dst_max.max() - dst_max.min() + 1e-10
-        )
-        dst_min_norm = (dst_min - dst_min.min()) / (
-            dst_min.max() - dst_min.min() + 1e-10
-        )
+            dst_mean_norm = (dst_mean - dst_mean.min()) / (
+                dst_mean.max() - dst_mean.min() + 1e-10
+            )
+            dst_std_norm = (dst_std - dst_std.min()) / (
+                dst_std.max() - dst_std.min() + 1e-10
+            )
+            dst_max_norm = (dst_max - dst_max.min()) / (
+                dst_max.max() - dst_max.min() + 1e-10
+            )
+            dst_min_norm = (dst_min - dst_min.min()) / (
+                dst_min.max() - dst_min.min() + 1e-10
+            )
 
-        feature_list.extend([dst_mean_norm, dst_std_norm, dst_max_norm, dst_min_norm])
-        feature_names.extend(
-            ["dst_node_mean", "dst_node_std", "dst_node_max", "dst_node_min"]
-        )
+            feature_list.extend([dst_mean_norm, dst_std_norm, dst_max_norm, dst_min_norm])
+            feature_names.extend(
+                ["dst_node_mean", "dst_node_std", "dst_node_max", "dst_node_min"]
+            )
 
         # Edge features - aggregate if available
         if edge_ids is not None and len(self.edge_raw_features) > 0:
@@ -194,15 +202,19 @@ class ShapleyExplainer:
 
         # Node ID features (normalized) - can indicate structural importance
         src_id_normalized = (src_node_ids / src_node_ids.max()).reshape(-1, 1)
-        dst_id_normalized = (dst_node_ids / dst_node_ids.max()).reshape(-1, 1)
-        feature_list.extend([src_id_normalized, dst_id_normalized])
-        feature_names.extend(["src_node_id", "dst_node_id"])
+        feature_list.append(src_id_normalized)
+        feature_names.append("src_node_id")
+        
+        if self.prediction_type == "link":
+            dst_id_normalized = (dst_node_ids / dst_node_ids.max()).reshape(-1, 1)
+            feature_list.append(dst_id_normalized)
+            feature_names.append("dst_node_id")
 
         # Concatenate all features
         feature_matrix = np.concatenate(feature_list, axis=1)
 
         logger.info(
-            f"Created feature matrix with {feature_matrix.shape[1]} aggregated features (reduced from 519 individual features)"
+            f"Created feature matrix with {feature_matrix.shape[1]} aggregated features for {self.prediction_type} prediction"
         )
 
         return feature_matrix, feature_names
@@ -220,7 +232,7 @@ class ShapleyExplainer:
 
         Args:
             src_node_ids: Source node IDs
-            dst_node_ids: Destination node IDs
+            dst_node_ids: Destination node IDs (not used for node classification)
             node_interact_times: Interaction timestamps
             edge_ids: Edge IDs (optional)
 
@@ -242,8 +254,16 @@ class ShapleyExplainer:
 
             # Get batched inputs
             src_ids_batch = src_node_ids[indices]
-            dst_ids_batch = dst_node_ids[indices]
             times_batch = node_interact_times[indices]
+            
+            # For link prediction, we need dst_node_ids; for node classification, we still need them
+            # for computing embeddings but won't use dst_emb in the classifier
+            if self.prediction_type == "link":
+                dst_ids_batch = dst_node_ids[indices]
+            else:
+                # For node classification, we still need dst_node_ids for the embedding computation
+                # but the model will only use src_emb
+                dst_ids_batch = dst_node_ids[indices] if len(dst_node_ids) > 0 else src_ids_batch
 
             with torch.no_grad():
                 # Get the dynamic backbone (first module in Sequential)
@@ -258,11 +278,16 @@ class ShapleyExplainer:
                     )
                 )
 
-                # Get the link predictor (second module in Sequential)
-                link_predictor = self.model[1]
+                # Get the predictor/classifier (second module in Sequential)
+                predictor = self.model[1]
 
                 # Make predictions (batched)
-                predictions = link_predictor(src_emb, dst_emb).squeeze()
+                if self.prediction_type == "link":
+                    # Link prediction: use both src_emb and dst_emb
+                    predictions = predictor(src_emb, dst_emb).squeeze()
+                else:
+                    # Node classification: use only src_emb
+                    predictions = predictor(x=src_emb).squeeze()
 
                 # Apply sigmoid to convert logits to probabilities [0, 1]
                 predictions = torch.sigmoid(predictions)
@@ -287,10 +312,11 @@ class ShapleyExplainer:
     ) -> Dict[str, Any]:
         """
         Compute SHAP values for the temporal graph model using KernelSHAP.
+        Supports both link prediction and node classification tasks.
 
         Args:
             src_node_ids: Source node IDs
-            dst_node_ids: Destination node IDs
+            dst_node_ids: Destination node IDs (required but not used for node classification)
             node_interact_times: Interaction timestamps
             edge_ids: Edge IDs (optional)
             labels: Ground truth labels (optional)
