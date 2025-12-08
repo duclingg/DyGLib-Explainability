@@ -5,6 +5,7 @@
 
 import logging
 import os
+from utils.utils import get_neighbor_sampler
 from explain.utils.load_configs import (
     get_explainer_args,
     load_data_attributes,
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     logger.info(f"Starting explanation for {args.model_name} on {args.dataset_name}")
     logger.info(f"Explainer type: {args.explainer_type}")
     logger.info(f"Prediction type: {args.prediction_type}")
-
+    
     if args.prediction_type == "link":
         # Load the link prediction model
         logger.info("Loading link prediction model and data...")
@@ -47,13 +48,17 @@ if __name__ == "__main__":
             unique_node_ids,
             num_unique_nodes,
         ) = load_data_attributes(full_data)
+        
+        neighbor_sampler = get_neighbor_sampler(
+            data=full_data,
+        )
 
         logger.info(
             f"Data loaded: {num_interactions} interactions, {num_unique_nodes} unique nodes"
         )
 
         # Create save directories
-        save_base_dir = f"./saved_explanations/{args.model_name}/{args.dataset_name}/{args.explainer_type}"
+        save_base_dir = f"./saved_explanations/{args.model_name}/{args.dataset_name}/{args.explainer_type}/link"
         os.makedirs(save_base_dir, exist_ok=True)
 
         plots_dir = os.path.join(save_base_dir, "plots")
@@ -140,7 +145,7 @@ if __name__ == "__main__":
         )
 
         # Create save directories
-        save_base_dir = f"./saved_explanations/{args.model_name}/{args.dataset_name}/{args.explainer_type}"
+        save_base_dir = f"./saved_explanations/{args.model_name}/{args.dataset_name}/{args.explainer_type}/node"
         os.makedirs(save_base_dir, exist_ok=True)
 
         plots_dir = os.path.join(save_base_dir, "plots")

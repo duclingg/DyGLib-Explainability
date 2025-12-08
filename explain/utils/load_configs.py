@@ -73,7 +73,7 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
     parser.add_argument(
         "--num_samples",
         type=int,
-        default=25,
+        default=50,
         help="number of samples for explanation background data, higher is more accurate but slower"
     )
     
@@ -87,7 +87,7 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
     parser.add_argument(
         "--nsamples",
         type=int,
-        default=25,
+        default=50,
         help="number of times to re-evaluate model per explanation, higher is more accurate but slower"
     )
 
