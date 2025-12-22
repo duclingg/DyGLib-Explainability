@@ -75,6 +75,7 @@ pydantic_core==2.41.5
 Pygments==2.19.2
 pyparsing==3.2.5
 python-dateutil==2.9.0.post0
+pytokens==0.2.0
 pytz==2025.2
 PyYAML==6.0.3
 regex==2025.11.3
@@ -84,6 +85,7 @@ safetensors==0.7.0
 scikit-image==0.22.0
 scikit-learn==1.7.2
 scipy==1.16.2
+seaborn==0.13.2
 setuptools==80.9.0
 shap==0.45.0
 shellingham==1.5.4
@@ -104,6 +106,8 @@ tifffile==2025.10.16
 tokenizers==0.22.1
 torch==2.8.0
 torch-geometric==2.7.0
+torch_scatter==2.1.2
+tornado==6.5.2
 tqdm==4.67.1
 transformers==4.57.3
 triton==3.4.0

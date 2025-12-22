@@ -56,8 +56,8 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
     parser.add_argument(
         "--explainer_type",
         type=str,
-        default="shapley",
-        choices=["shapley", "anchors", "counterfactuals", "LIME", "all"],
+        default="tempe",
+        choices=["tempme", "shapley"],
         help="name of the explainer",
     )
 
@@ -70,6 +70,50 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
         help="type of prediction task",
     )
     
+    # TempME explanation parameters
+    parser.add_argument(
+        "--num_examples",
+        type=int,
+        default=5000,
+        help="number of examples to explain for TempME"
+    )
+    
+    parser.add_argument(
+        "--tempme_batch_size",
+        type=int,
+        default=1000,
+        help="batch size for training TempME"
+    )
+    
+    parser.add_argument(
+        "--prior_p",
+        type=float,
+        default=0.3,
+        help="prior probability for TempME"
+    )
+    
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.5,
+        help="beta for TempME"
+    )
+    
+    parser.add_argument(
+        "--target_idx",
+        type=int,
+        default=-1,
+        help="index of the target example to explain for TempME"
+    )
+    
+    parser.add_argument(
+        "--num_walks",
+        type=int,
+        default=2,
+        help="number of walks to sample for each example for TempME"
+    )
+    
+    # SHAP explanation parameters
     parser.add_argument(
         "--num_samples",
         type=int,
@@ -91,6 +135,7 @@ def get_explainer_args(is_evaluation: bool) -> argparse.Namespace:
         help="number of times to re-evaluate model per explanation, higher is more accurate but slower"
     )
 
+    # default parameters
     parser.add_argument(
         "--dataset_name",
         type=str,
@@ -298,7 +343,7 @@ def load_data_attributes(
     )
 
 
-def load_link_prediction_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Data]:
+def load_link_prediction_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Data, Data, Data, Data]:
     """
     load the link prediction model
 
@@ -533,10 +578,10 @@ def load_link_prediction_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Dat
 
             model = convert_to_gpu(model, device=args.device)
 
-    return model, node_raw_features, edge_raw_features, full_data
+    return model, node_raw_features, edge_raw_features, full_data, train_data, val_data, test_data
 
 
-def load_node_classification_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Data]:
+def load_node_classification_model() -> Tuple[nn.Module, np.ndarray, np.ndarray, Data, Data, Data, Data]:
     """
     Load the node classification model.
 
@@ -734,4 +779,4 @@ def load_node_classification_model() -> Tuple[nn.Module, np.ndarray, np.ndarray,
                 )
             model[0].memory_bank.node_raw_messages[node_id] = new_node_raw_messages
 
-    return model, node_raw_features, edge_raw_features, full_data
+    return model, node_raw_features, edge_raw_features, full_data, train_data, val_data, test_data

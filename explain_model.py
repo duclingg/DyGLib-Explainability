@@ -3,8 +3,12 @@
 # Justin Hoang
 # Updated: 11/14/2025
 
+import torch
+import torch.nn as nn
 import logging
 import os
+import numpy as np
+
 from utils.utils import get_neighbor_sampler
 from explain.utils.load_configs import (
     get_explainer_args,
@@ -13,6 +17,14 @@ from explain.utils.load_configs import (
     load_node_classification_model,
 )
 from explain.shapley import ShapleyExplainer
+from explain.TempME.tempme import TempMEDyGFormer
+from explain.TempME.utils import (
+    NeighborFinder, 
+    compute_teacher_predictions,
+    train_tempme,
+    get_explanations,
+    assess_explanations
+)
 
 
 if __name__ == "__main__":
@@ -33,7 +45,15 @@ if __name__ == "__main__":
     if args.prediction_type == "link":
         # Load the link prediction model
         logger.info("Loading link prediction model and data...")
-        model, node_raw_features, edge_raw_features, full_data = (
+        (
+            model, 
+            node_raw_features, 
+            edge_raw_features, 
+            full_data,
+            train_data,
+            val_data,
+            test_data,
+        ) = (
             load_link_prediction_model()
         )
 
@@ -113,18 +133,109 @@ if __name__ == "__main__":
             logger.info(f"Results saved to:")
             logger.info(f"JSON:  {results_path}")
             logger.info(f"Plots: {plots_dir}")
-
-        elif args.explainer_type in ["anchors", "counterfactuals", "LIME"]:
-            # TODO: implement other explainer types
-            logger.error(f"Explainer type '{args.explainer_type}' not yet implemented!")
-            raise NotImplementedError(
-                f"Explainer type '{args.explainer_type}' is not yet implemented."
+            
+        elif args.explainer_type == "tempme":
+            logger.info("=" * 80)
+            logger.info("Starting TempME Explanation")
+            logger.info("=" * 80)
+            
+            logger.info("Building adjacency matrix...")
+            # build adjacency matrix
+            adj_list = [[] for _ in range(full_data.num_unique_nodes + 1)]
+            for src, dst, edge_id, ts in zip(
+                full_data.src_node_ids, full_data.dst_node_ids, full_data.edge_ids, full_data.node_interact_times
+            ):
+                adj_list[src].append((dst, edge_id, ts))
+                adj_list[dst].append((src, edge_id, ts))
+            neighbor_finder = NeighborFinder(adj_list)
+            
+            tempme = TempMEDyGFormer(
+                base=model[0], # dynamic backbone
+                base_model_type=args.model_name,
+                data=args.dataset_name,
+                out_dim=1,
+                hid_dim=node_raw_features.shape[1],
+                device=args.device
+            )
+            
+            # generate example data
+            np.random.seed(42)
+            test_indices = np.random.choice(
+                len(test_data.src_node_ids),
+                size=min(args.num_examples, len(test_data.src_node_ids)),
+                replace=False
+            )
+            example_data = compute_teacher_predictions(
+                model=model,
+                data=test_data,
+                indices=test_indices
+            )
+            
+            # train TempME explainer
+            tempme.train()
+            optimizer = torch.optim.Adam(
+                tempme.parameters(),
+                lr=1e-3,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+                weight_decay=0
+            )
+            criterion = nn.BCEWithLogitsLoss()
+            train_tempme(
+                data=example_data,
+                batch_size=args.tempme_batch_size,
+                num_walks=args.num_walks,
+                prior_p=args.prior_p,
+                beta=args.beta,
+                neighbor_finder=neighbor_finder,
+                tempme=tempme,
+                optimizer=optimizer,
+                criterion=criterion,
+                device=args.device,
+            )
+            
+            # get explanations
+            motif_subgraphs, graphlet_imp, edge_imp = get_explanations(
+                model_name=args.model_name,
+                dataset_name=args.dataset_name,
+                test_data=test_data,
+                examples=example_data,
+                tempme=tempme,
+                neighbor_finder=neighbor_finder,
+                num_walks=args.num_walks,
+            )
+            
+            # assess explanations
+            (
+                fid_prob,
+                fid_logit,
+                expl_auc,
+                expl_ap,
+                expl_acc,
+                base_auc,
+                base_ap,
+                base_acc
+            ) = assess_explanations(
+                test_data=test_data,
+                examples=example_data,
+                model=model,
+                tempme=tempme,
+                neighbor_finder=neighbor_finder,
+                num_walks=args.num_walks,
             )
 
     elif args.prediction_type == "node":
         # Load the node classification model
         logger.info("Loading node classification model and data...")
-        model, node_raw_features, edge_raw_features, full_data = (
+        (
+            model, 
+            node_raw_features, 
+            edge_raw_features, 
+            full_data,
+            train_data,
+            val_data,
+            test_data,
+        ) = (
             load_node_classification_model()
         )
 
